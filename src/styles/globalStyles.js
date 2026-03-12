@@ -53,7 +53,7 @@ const globalStyles = StyleSheet.create({
         flex: 1,
         backgroundColor: '#111',
         alignItems: 'center',
-        /*justifyContent: 'center',*/
+        justifyContent: 'center',
         paddingHorizontal: 20,
     },
 
@@ -94,6 +94,7 @@ const globalStyles = StyleSheet.create({
     button: {
         backgroundColor: '#ff6600',
         paddingVertical: 15,
+        marginHorizontal: 16,
         borderRadius: 12,
         alignItems: 'center',
         marginTop: 10,
@@ -256,6 +257,32 @@ const globalStyles = StyleSheet.create({
     modalCardImage: {
         flex: 1,
         justifyContent: 'flex-end',
+    },
+
+
+    // ── Delete Button ─────────────────────────────
+    DeleteButton: {
+        width: "30%",
+        height: 30,
+        borderRadius: 10,
+        backgroundColor: 'red',
+        justifyContent: 'center',
+        gap: 5,
+        alignItems: 'center',
+        flexDirection: 'row',
+    },
+    DeleteButtonImage: {
+        width: 20,
+        height: 20,
+    },
+    DeleteButtonText: {
+        color: '#fff',
+        fontSize: 12,
+        fontWeight: '300',
+        letterSpacing: 0.5,
+        textShadowColor: 'rgba(0,0,0,0.6)',
+        textShadowOffset: { width: 0, height: 1 },
+        textShadowRadius: 4,
     },
 
     // ── Colors (reference) ─────────────────────────────

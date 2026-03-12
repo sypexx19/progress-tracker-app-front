@@ -1,8 +1,8 @@
-import { useContext, useState, useEffect, useRef } from 'react';
+import { useContext, useState, useEffect, useRef, useCallback } from 'react';
 import { View, Text, FlatList, Pressable, ImageBackground, Modal, TextInput, ScrollView, Animated } from 'react-native';
 import { SafeAreaView } from "react-native-safe-area-context";
 import { AuthContext } from '../context/AuthContext';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import g from '../styles/globalStyles';
 
 const Workouts = (props) => {
@@ -36,9 +36,9 @@ const Workouts = (props) => {
     };
 
     useEffect(() => {
-        fetchWorkouts();
         fetchDefaultWorkouts();
     }, []);
+    useFocusEffect(useCallback(() => { fetchWorkouts(); }, [sportID]));
 
     const fetchWorkouts = async () => {
         try {
@@ -133,11 +133,11 @@ const Workouts = (props) => {
 
     const renderWorkoutItem = ({ item }) => {
         const img = getImageForWorkout(item.workout_name);
-        if (!img) return null;
+        /*if (!img) return null;*/
         return (
             <Pressable
                 style={({ pressed }) => [g.card, pressed && g.cardPressed]}
-                onPress={() => navigation.navigate('Workout', { workoutID: item.workout_id })}
+                onPress={() => navigation.navigate('Workout-days', { workoutID: item.workout_id, sportID })}
             >
                 <ImageBackground source={img} style={g.cardImage} imageStyle={g.cardImageStyle} resizeMode="cover">
                     <View style={g.cardOverlay} />
