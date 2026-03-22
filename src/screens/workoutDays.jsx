@@ -1,13 +1,12 @@
 import { useContext, useState, useEffect, useRef } from 'react';
-import { View, Text, FlatList, StyleSheet, Pressable, ImageBackground, Modal, TextInput, ScrollView, Animated } from 'react-native';
+import { View, Text, FlatList, StyleSheet, Pressable, ImageBackground, Modal, TextInput, ScrollView, Animated, Platform } from 'react-native';
 import { SafeAreaView } from "react-native-safe-area-context";
 import { AuthContext } from '../context/AuthContext';
 import { useNavigation } from '@react-navigation/native';
 import g from '../styles/globalStyles';
+import DateTimePicker from "@react-native-community/datetimepicker";
 
-const DayItem = ({ item }) => {
-
-    const { token } = useContext(AuthContext);
+const DayItem = ({ item, token, index }) => {
 
     const [open, setOpen] = useState(false);
     const animHeight = useRef(new Animated.Value(0)).current;
@@ -81,7 +80,7 @@ const DayItem = ({ item }) => {
                 onPress={toggle}
             >
                 <View style={styles.cardContent}>
-                    <Text style={styles.cardLabel}>Day {item.day_id}  :  {item.day_name ? item.day_name.charAt(0).toUpperCase() + item.day_name.slice(1) : ''}</Text>
+                    <Text style={styles.cardLabel}>Day {index + 1}  :  {item.day_name ? item.day_name.charAt(0).toUpperCase() + item.day_name.slice(1) : ''}</Text>
                     <Animated.Text style={[styles.arrow, { transform: [{ rotate }] }]}>
                         ▼
                     </Animated.Text>
@@ -107,14 +106,40 @@ const DayItem = ({ item }) => {
 
 }
 
-
 const Days = (props) => {
-    const { workoutID } = props.route.params;
-    const { token } = useContext(AuthContext);
-    const navigation = useNavigation();
-    const { sportID } = props.route.params;
 
     const [days, setDays] = useState([]);
+    const [isModalOpen, setIsModalOpen] = useState(false);
+    const [startDate, setStartDate] = useState(new Date());
+    const [endDate, setEndDate] = useState(new Date());
+    const [activePicker, setActivePicker] = useState(null); // 'start' | 'end' | null
+    const [showPicker, setShowPicker] = useState(false);
+
+    const { token } = useContext(AuthContext);
+    const navigation = useNavigation();
+
+    const onChangeDate = (event, selectedDate) => {
+        if (event.type === 'dismissed') {
+            setShowPicker(false);
+            setActivePicker(null);
+            return;
+        }
+
+        const pickedDate = selectedDate || new Date();
+
+        if (activePicker === 'start') {
+            setStartDate(pickedDate);
+            // Ensure end date is not before start date
+            if (endDate < pickedDate) {
+                setEndDate(pickedDate);
+            }
+        } else if (activePicker === 'end') {
+            setEndDate(pickedDate);
+        }
+
+        setShowPicker(false);
+        setActivePicker(null);
+    };
 
 
     useEffect(() => {
@@ -136,6 +161,31 @@ const Days = (props) => {
             console.error("Error fetching workout days:", error);
         }
     };
+    const handleStartWorkout = async () => {
+        const res = await fetch(`http://192.168.100.7:5000/api/workouts/createSession`, {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                "Authorization": `Bearer ${token}`
+            },
+            body: JSON.stringify({
+                workoutID,
+                startDate: startDate.toISOString(),
+                endDate: endDate.toISOString()
+            })
+        });
+        const data = await res.json();
+        if (res.ok) {
+            console.log(data);
+            setIsModalOpen(false);
+            navigation.navigate('Home', { workoutID, sessionID: data.sessionID, sportID });
+        }
+        else {
+            console.log("Error" + data.error)
+        }
+
+
+    };
 
 
     return (
@@ -144,18 +194,79 @@ const Days = (props) => {
                 style={g.list}
                 data={days}
                 keyExtractor={(item) => item.day_id.toString()}
-                renderItem={({ item }) => <DayItem item={item} />}
+                renderItem={({ item, index }) => <DayItem item={item} token={token} index={index} />}
                 contentContainerStyle={g.listContent}
                 showsVerticalScrollIndicator={false}
             />
             <View style={styles.buttonContainer}>
-                <Pressable style={g.button}>
+                <Pressable style={g.button} onPress={() => setIsModalOpen(true)}>
                     <Text style={g.buttonText}> Start Workout </Text>
                 </Pressable>
-                <Pressable style={g.buttonOutline} onPress={() => navigation.navigate('EditWorkout', { workoutID, sportID })}>
+                <Pressable style={g.buttonOutline} onPress={() => navigation.navigate('EditWorkout', { workoutID, sportID, sportName })}>
                     <Text style={g.buttonOutlineText}> Edit Workout </Text>
                 </Pressable>
             </View>
+            <Modal animationType="slide"
+                transparent={true}
+                visible={isModalOpen}
+                onRequestClose={() => setIsModalOpen(false)} >
+                <View style={g.modalOverlay}>
+                    <View style={g.modalContainer}>
+                        <Text style={g.modalTitle}>Select session duration</Text>
+                        <View style={styles.InputsHolder}>
+                            <View style={styles.dateBlock}>
+                                <Text style={styles.dateLabel}>Start date</Text>
+                                <Pressable
+                                    style={styles.dateButton}
+                                    onPress={() => {
+                                        setActivePicker('start');
+                                        setShowPicker(true);
+                                    }}
+                                >
+                                    <Text style={styles.dateButtonText}>{startDate.toDateString()}</Text>
+                                </Pressable>
+                            </View>
+
+                            <View style={styles.dateBlock}>
+                                <Text style={styles.dateLabel}>End date</Text>
+                                <Pressable
+                                    style={styles.dateButton}
+                                    onPress={() => {
+                                        setActivePicker('end');
+                                        setShowPicker(true);
+                                    }}
+                                >
+                                    <Text style={styles.dateButtonText}>{endDate.toDateString()}</Text>
+                                </Pressable>
+                            </View>
+
+                            {showPicker && (
+                                <DateTimePicker
+                                    value={activePicker === 'end' ? endDate : startDate}
+                                    mode="date"
+                                    display={Platform.OS === 'android' ? 'calendar' : 'spinner'}
+                                    onChange={onChangeDate}
+                                />
+                            )}
+
+                        </View>
+                        <View style={styles.modalButtonsHolder}>
+                            <Pressable
+                                style={[g.buttonOutline, styles.modalButton]}
+                                onPress={() => setIsModalOpen(false)}
+                            >
+                                <Text style={g.buttonOutlineText}>Cancel</Text>
+                            </Pressable>
+                            <Pressable
+                                style={[g.button, styles.modalButton]}
+                                onPress={handleStartWorkout}
+                            >
+                                <Text style={g.buttonText}>Confirm</Text>
+                            </Pressable>
+                        </View>
+                    </View>
+                </View>
+            </Modal>
 
         </SafeAreaView>
     );
@@ -215,5 +326,45 @@ const styles = StyleSheet.create({
         color: '#ff6600',
         fontSize: 13,
         fontWeight: '600',
+    },
+    InputsHolder: {
+        width: '100%',
+        marginTop: 8,
+        paddingHorizontal: 20,
+        paddingBottom: 24,
+        gap: 10,
+    },
+    dateBlock: {
+        width: '100%',
+        marginBottom: 6,
+    },
+    dateLabel: {
+        color: '#fff',
+        fontSize: 16,
+        fontWeight: '600',
+        marginBottom: 8,
+    },
+    dateButton: {
+        paddingVertical: 10,
+        paddingHorizontal: 14,
+        borderRadius: 8,
+        borderWidth: 1,
+        borderColor: '#444',
+        backgroundColor: '#1a1a1a',
+    },
+    dateButtonText: {
+        color: '#fff',
+        fontSize: 14,
+    },
+    modalButtonsHolder: {
+        flexDirection: 'column',
+        width: '100%',
+        marginTop: 8,
+        paddingHorizontal: 20,
+        paddingBottom: 20,
+    },
+    modalButton: {
+        width: '100%',
+        marginHorizontal: 0,
     },
 });

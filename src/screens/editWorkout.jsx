@@ -3,31 +3,39 @@ import { View, Text, FlatList, StyleSheet, Pressable, Modal, TextInput } from 'r
 import { SafeAreaView } from "react-native-safe-area-context";
 import { AuthContext } from '../context/AuthContext';
 import { useNavigation } from '@react-navigation/native';
+import { g } from '../styles/global';
 
-const DayItem = ({ item, exercisesForDay, onPress }) => {
+const DayItem = ({ item, exercisesForDay, onPress, onDelete, index }) => {
     return (
-        <Pressable
-            style={({ pressed }) => [styles.card, pressed && { opacity: 0.85 }]}
-            onPress={onPress}
-        >
-            <View style={styles.cardContent}>
-                <Text style={styles.cardLabel}>
-                    Day {item.day_id}  :  {item.day_name
-                        ? item.day_name.charAt(0).toUpperCase() + item.day_name.slice(1)
-                        : ''}
-                </Text>
-                {exercisesForDay.length > 0 && (
-                    <Text style={styles.cardBadge}>✓ {exercisesForDay.length} exercises</Text>
-                )}
-            </View>
-        </Pressable>
+        <View style={{ position: 'relative' }}>
+            <Pressable
+                style={({ pressed }) => [styles.card, pressed && { opacity: 0.85 }]}
+                onPress={onPress}
+            >
+                <View style={styles.cardContent}>
+                    <Text style={styles.cardLabel}>
+                        Day {index + 1}  :  {item.day_name
+                            ? item.day_name.charAt(0).toUpperCase() + item.day_name.slice(1)
+                            : ''}
+                    </Text>
+                    {exercisesForDay.length > 0 && (
+                        <Text style={styles.cardBadge}>✓ {exercisesForDay.length} exercises</Text>
+                    )}
+                </View>
+            </Pressable>
+            <Pressable
+                style={({ pressed }) => [styles.deleteBtn, pressed && styles.deleteBtnPressed]}
+                onPress={onDelete}
+            >
+                <Text style={styles.deleteIcon}>✕</Text>
+            </Pressable>
+        </View>
     );
 };
 
 
 const EditWorkout = (props) => {
-
-    const { sportID, workoutID } = props.route.params;
+    const { sportID, workoutID, sportName } = props.route.params;
 
     const navigation = useNavigation();
     const { token } = useContext(AuthContext);
@@ -35,7 +43,6 @@ const EditWorkout = (props) => {
     const [isModelOpen, setIsModelOpen] = useState(false);
     const [workoutName, setWorkoutName] = useState("");
     const [days, setDays] = useState([]);
-    // daysData: { [day_id]: { ...day, exercises: [] } }
     const [daysData, setDaysData] = useState({});
 
     useEffect(() => {
@@ -64,9 +71,32 @@ const EditWorkout = (props) => {
         }
     };
 
-    // ✅ THE FIX: pass a callback to EditEx instead of relying on navigation params.
-    // When EditEx calls onSave(dayID, exercises), setDaysData runs HERE directly
-    // in the existing EditWorkout instance — days re-render instantly, guaranteed.
+    const handleDeleteDay = async (dayID) => {
+        try {
+            const res = await fetch(`http://192.168.100.7:5000/api/days/delete/${dayID}`, {
+                method: "DELETE",
+                headers: {
+                    "Content-Type": "application/json",
+                    "Authorization": `Bearer ${token}`
+                },
+            });
+            if (res.ok) {
+                // Remove from local state immediately — no need to refetch
+                setDays(prev => prev.filter(d => d.day_id !== dayID));
+                setDaysData(prev => {
+                    const updated = { ...prev };
+                    delete updated[dayID];
+                    return updated;
+                });
+            } else {
+                const data = await res.json();
+                alert(data.message || "Error deleting day");
+            }
+        } catch (error) {
+            console.error("Error deleting day:", error);
+        }
+    };
+
     const handleDayPress = (item) => {
         navigation.navigate('EditEx', {
             day: item.day_name,
@@ -80,34 +110,33 @@ const EditWorkout = (props) => {
         });
     };
 
+    // Updates the existing workout name in place
+    // (days and exercises are already saved live via addDays/addExercise)
     const handleSave = async () => {
-        const payload = {
-            sportID,
-            workoutName,
-            days: Object.values(daysData).map(day => ({
-                day_id: day.day_id,
-                day_name: day.day_name,
-                exercises: day.exercises
-            }))
-        };
+        if (!workoutName.trim()) {
+            // No name change — just go back
+            setIsModelOpen(false);
+            navigation.navigate('Workouts', { sportID, sportName });
+            return;
+        }
         try {
-            const response = await fetch('http://192.168.100.7:5000/api/workouts/save', {
-                method: 'POST',
+            const response = await fetch(`http://192.168.100.7:5000/api/workouts/update/${workoutID}`, {
+                method: 'PUT',
                 headers: {
                     'Content-Type': 'application/json',
                     'Authorization': `Bearer ${token}`
                 },
-                body: JSON.stringify(payload)
+                body: JSON.stringify({ workoutName })
             });
             if (response.ok) {
                 setIsModelOpen(false);
-                navigation.navigate('Workouts', { sportID });
+                navigation.navigate('Workouts', { sportID, sportName });
             } else {
                 const err = await response.json();
-                alert(err.message || 'Failed to save workout');
+                alert(err.message || 'Failed to update workout');
             }
         } catch (error) {
-            console.error('Save error:', error);
+            console.error('Update error:', error);
             alert('Server error: ' + error.message);
         }
     };
@@ -118,11 +147,13 @@ const EditWorkout = (props) => {
                 style={{ flex: 1 }}
                 data={days}
                 keyExtractor={(item) => item.day_id.toString()}
-                renderItem={({ item }) => (
+                renderItem={({ item, index }) => (
                     <DayItem
                         item={item}
                         exercisesForDay={daysData[item.day_id]?.exercises || []}
                         onPress={() => handleDayPress(item)}
+                        onDelete={() => handleDeleteDay(item.day_id)}
+                        index={index}
                     />
                 )}
                 contentContainerStyle={styles.listContent}
@@ -138,7 +169,9 @@ const EditWorkout = (props) => {
                 onRequestClose={() => setIsModelOpen(false)}>
                 <View style={styles.modalOverlay}>
                     <View style={styles.modalContainer}>
-                        <Text style={styles.modalTitle}>Name your Workout</Text>
+                        <Text style={styles.modalTitle}>
+                            Rename Workout (optional)
+                        </Text>
                         <TextInput
                             style={styles.input}
                             placeholder="Workout Name"
@@ -147,7 +180,9 @@ const EditWorkout = (props) => {
                             onChangeText={setWorkoutName}
                         />
                         <Pressable style={styles.button} onPress={handleSave}>
-                            <Text style={styles.buttonText}>Save and Start Session</Text>
+                            <Text style={styles.buttonText}>
+                                Save
+                            </Text>
                         </Pressable>
                         <Pressable onPress={() => setIsModelOpen(false)}>
                             <Text style={styles.cancelText}>Cancel</Text>
@@ -248,5 +283,28 @@ const styles = StyleSheet.create({
         textAlign: 'center',
         fontSize: 15,
         marginTop: 4,
+    },
+    deleteBtn: {
+        position: 'absolute',
+        top: 10,
+        right: 10,
+        width: 28,
+        height: 28,
+        borderRadius: 8,
+        backgroundColor: 'rgba(30,0,0,0.75)',
+        borderWidth: 1,
+        borderColor: '#ff2222',
+        alignItems: 'center',
+        justifyContent: 'center',
+        zIndex: 10,
+    },
+    deleteBtnPressed: {
+        backgroundColor: '#ff2222',
+        transform: [{ scale: 0.92 }],
+    },
+    deleteIcon: {
+        color: '#ff4444',
+        fontSize: 12,
+        fontWeight: '700',
     },
 });

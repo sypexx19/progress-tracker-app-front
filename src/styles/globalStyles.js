@@ -20,7 +20,7 @@ const globalStyles = StyleSheet.create({
         position: 'absolute',
         top: 4,
         left: 4,
-        width: 126,   // match tab width
+        width: '30%',   // match tab width
         height: '100%',
         backgroundColor: '#ff6600',
         borderRadius: 26,
@@ -31,7 +31,7 @@ const globalStyles = StyleSheet.create({
         elevation: 4,
     },
     tab: {
-        width: 126,   // fixed width so sliding works
+        width: '30%',   // fixed width so sliding works
         paddingVertical: 10,
         alignItems: 'center',
         justifyContent: 'center',

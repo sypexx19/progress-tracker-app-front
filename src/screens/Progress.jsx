@@ -1,42 +1,76 @@
 import { useState, useEffect, useContext } from 'react';
-import { View, Text, FlatList, StyleSheet, Pressable, TextInput, ActivityIndicator } from 'react-native';
+import { View, Text, FlatList, StyleSheet, Pressable, TextInput, ActivityIndicator, Alert } from 'react-native';
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useNavigation } from '@react-navigation/native';
 import { AuthContext } from '../context/AuthContext';
 
-const EditEx = (props) => {
-    const { day, dayID, onSave } = props.route.params;
+const Progress = (props) => {
+    const { dayID } = props.route.params;
     const { token } = useContext(AuthContext);
     const navigation = useNavigation();
 
     const [exercises, setExercises] = useState([]);
     const [loading, setLoading] = useState(true);
+    const [saving, setSaving] = useState(false);
     const [onFocus, setOnFocus] = useState("");
     const [exerciseData, setExerciseData] = useState({});
 
     useEffect(() => {
         fetchExercises();
-    }, []);
+    }, [dayID]);
 
     const fetchExercises = async () => {
+        setLoading(true);
         try {
-            const res = await fetch(`http://192.168.100.7:5000/api/exercises/get/${dayID}`, {
+            // 1) Load exercise list exactly like EditEx.jsx
+            const exRes = await fetch(`http://192.168.100.7:5000/api/exercises/get/${dayID}`, {
                 method: "GET",
                 headers: {
                     "Content-Type": "application/json",
                     "Authorization": `Bearer ${token}`
                 },
             });
-            const data = await res.json();
-            const list = Array.isArray(data) ? data : [];
+
+            const exText = await exRes.text();
+            const exData = exText ? JSON.parse(exText) : [];
+            const baseExercises = Array.isArray(exData) ? exData : [];
+
+            // 2) Load existing logs for history + latest values
+            const logsRes = await fetch(`http://192.168.100.7:5000/api/session/getEx/${dayID}`, {
+                method: "GET",
+                headers: {
+                    "Content-Type": "application/json",
+                    "Authorization": `Bearer ${token}`
+                },
+            });
+            const logsText = await logsRes.text();
+            const logsData = logsText ? JSON.parse(logsText) : [];
+            const logsList = Array.isArray(logsData) ? logsData : [];
+            const logsMap = new Map(logsList.map((l) => [String(l.exercise_id), l]));
+
+            const list = baseExercises.map((ex) => {
+                const logData = logsMap.get(String(ex.id));
+                return {
+                    exercise_id: ex.id,
+                    ex_name: ex.ex_name,
+                    sets: ex.sets,
+                    reps: ex.reps,
+                    weight: ex.weight,
+                    rest: ex.rest,
+                    latest: logData?.latest || null,
+                    logs: logData?.logs || [],
+                };
+            });
+
             setExercises(list);
+
             const initial = list.reduce((acc, item) => {
-                const key = item.ex_id ?? item.id;
+                const key = item.exercise_id;
                 acc[key] = {
-                    sets: item.sets ? String(item.sets) : '',
-                    reps: item.reps ? String(item.reps) : '',
-                    weight: item.weight ? String(item.weight) : '',
-                    rest: item.rest ? String(item.rest) : '',
+                    sets: item.latest?.sets ? String(item.latest.sets) : (item.sets ? String(item.sets) : ''),
+                    reps: item.latest?.reps ? String(item.latest.reps) : (item.reps ? String(item.reps) : ''),
+                    weight: item.latest?.weight ? String(item.latest.weight) : (item.weight ? String(item.weight) : ''),
+                    rest: item.latest?.rest ? String(item.latest.rest) : (item.rest ? String(item.rest) : ''),
                 };
                 return acc;
             }, {});
@@ -56,51 +90,68 @@ const EditEx = (props) => {
     };
 
 
-    const handleConfirm = () => {
-        const payload = exercises.map(ex => {
-            const key = ex.ex_id ?? ex.id;
-            return {
+    const saveOneLog = async (exercise) => {
+        const key = exercise.exercise_id;
+        const form = exerciseData[key] || {};
+        const sets = parseInt(form.sets, 10);
+        const reps = parseInt(form.reps, 10);
+        const weight = parseFloat(form.weight);
+        const rest = parseInt(form.rest, 10);
+
+        if (!sets || !reps || Number.isNaN(weight) || !rest) {
+            return { ok: false, message: `${exercise.ex_name}: fill Sets, Reps, Weight and Rest` };
+        }
+
+        const res = await fetch(`http://192.168.100.7:5000/api/session/logs/${dayID}`, {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                "Authorization": `Bearer ${token}`
+            },
+            body: JSON.stringify({
                 exercise_id: key,
-                ex_name: ex.ex_name,
-                dayID,
-                ...(exerciseData[key] || { sets: '', reps: '', weight: '', rest: '' })
-            };
+                ex_name: exercise.ex_name,
+                sets,
+                reps,
+                weight,
+                rest,
+            }),
         });
 
-        if (onSave) {
-            onSave(dayID, payload);
+        if (!res.ok) {
+            const errText = await res.text();
+            return { ok: false, message: `${exercise.ex_name}: ${errText || 'save failed'}` };
         }
 
-        navigation.goBack();
+        return { ok: true };
     };
-    const handleDelete = async (id) => {
+
+    const handleConfirm = async () => {
+        setSaving(true);
         try {
-            const res = await fetch(`http://192.168.100.7:5000/api/exercises/delete/${id}`, {
-                method: "DELETE",
-                headers: {
-                    "Content-Type": "application/json",
-                    "Authorization": `Bearer ${token}`
-                },
-            });
-            const data = await res.json();
-            setExercises(exercises.filter(ex => ex.id !== id));
+            const results = await Promise.all(exercises.map(saveOneLog));
+            const failed = results.filter((r) => !r.ok);
+            if (failed.length > 0) {
+                Alert.alert('Save failed', failed.map((f) => f.message).join('\n'));
+                return;
+            }
+
+            Alert.alert('Saved', 'New log entries were added.');
+            await fetchExercises();
         } catch (error) {
-            console.error("Error deleting exercise:", error);
+            console.error("Error saving logs:", error);
+            Alert.alert('Error', 'Unable to save logs right now.');
+        } finally {
+            setSaving(false);
         }
     };
-
     const renderItem = ({ item }) => {
-        const key = item.id;
+        const key = item.exercise_id;
+        const logs = Array.isArray(item.logs) ? item.logs : [];
         return (
             <View style={styles.card}>
                 <View style={styles.cardHeader}>
                     <Text style={styles.cardLabel}>{item.ex_name}</Text>
-                    <Pressable
-                        style={({ pressed }) => [styles.deleteBtn, pressed && styles.deleteBtnPressed]}
-                        onPress={() => handleDelete(key)}
-                    >
-                        <Text style={styles.deleteIcon}>✕</Text>
-                    </Pressable>
                 </View>
                 <View style={styles.inputRow}>
                     {[
@@ -127,6 +178,16 @@ const EditEx = (props) => {
                         </View>
                     ))}
                 </View>
+                {logs.length > 0 && (
+                    <View style={styles.logsWrap}>
+                        <Text style={styles.logsTitle}>Previous logs</Text>
+                        {logs.slice(0, 3).map((log, idx) => (
+                            <Text key={`${key}-${idx}`} style={styles.logItem}>
+                                {`#${logs.length - idx}  ${log.sets}x${log.reps}  ${log.weight}kg  rest ${log.rest}s`}
+                            </Text>
+                        ))}
+                    </View>
+                )}
             </View>
         );
     };
@@ -141,7 +202,7 @@ const EditEx = (props) => {
     return (
         <SafeAreaView style={styles.container}>
             <Text style={styles.title}>
-                {day ? day.charAt(0).toUpperCase() + day.slice(1) : 'Exercises'}
+                Exercise Progress
             </Text>
 
             {exercises.length === 0 ? (
@@ -152,7 +213,7 @@ const EditEx = (props) => {
                 <FlatList
                     style={{ flex: 1 }}
                     data={exercises}
-                    keyExtractor={(item) => (item.ex_id ?? item.id).toString()}
+                    keyExtractor={(item) => item.exercise_id.toString()}
                     renderItem={renderItem}
                     contentContainerStyle={styles.listContent}
                     showsVerticalScrollIndicator={false}
@@ -165,14 +226,14 @@ const EditEx = (props) => {
             >
                 <Text style={styles.buttonOutlineText}>+ Add Exercise</Text>
             </Pressable>
-            <Pressable style={styles.button} onPress={handleConfirm}>
-                <Text style={styles.buttonText}>Save</Text>
+            <Pressable style={styles.button} onPress={handleConfirm} disabled={saving}>
+                <Text style={styles.buttonText}>{saving ? 'Saving...' : 'Save Log'}</Text>
             </Pressable>
         </SafeAreaView>
     );
 };
 
-export default EditEx;
+export default Progress;
 
 const styles = StyleSheet.create({
     container: {
@@ -272,23 +333,19 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         justifyContent: 'space-between',
     },
-    deleteBtn: {
-        width: 32,
-        height: 32,
-        borderRadius: 10,
-        backgroundColor: '#2a0a0a',
-        borderWidth: 1,
-        borderColor: '#ff2222',
-        alignItems: 'center',
-        justifyContent: 'center',
+    logsWrap: {
+        borderTopWidth: 1,
+        borderTopColor: '#2a2a2a',
+        paddingTop: 10,
+        gap: 4,
     },
-    deleteBtnPressed: {
-        backgroundColor: '#ff2222',
-        transform: [{ scale: 0.92 }],
+    logsTitle: {
+        color: '#bbb',
+        fontSize: 12,
+        fontWeight: '600',
     },
-    deleteIcon: {
-        color: '#ff4444',
-        fontSize: 13,
-        fontWeight: '700',
+    logItem: {
+        color: '#888',
+        fontSize: 12,
     },
 });
