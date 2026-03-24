@@ -1,13 +1,51 @@
-import { useState, useRef, useCallback, useContext } from 'react';
-import { View, Text, Pressable, Animated, FlatList, StyleSheet } from 'react-native';
+import { useState, useRef, useCallback } from 'react';
+import { View, Text, Pressable, Animated, FlatList, StyleSheet, ImageBackground } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
+import { getSessions } from '../controllers/workout_controllers';
 import g from '../styles/globalStyles';
-import { AuthContext } from '../context/AuthContext';
+
+const workoutImages = [
+    require('../assets/pushpulllegs.jpg'),
+    require('../assets/arnoldsplit.jpg'),
+    require('../assets/fullbody.jpg'),
+    require('../assets/upperlower.jpg'),
+    require('../assets/brosplit.jpg'),
+    require('../assets/pplxarnold.jpg'),
+    require('../assets/pplxul.jpg'),
+];
+
+const getImageForWorkout = (workoutName) => {
+    const index = workoutName
+        ? workoutName.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0) % workoutImages.length
+        : 0;
+    return workoutImages[index];
+};
+
+const formatWorkoutName = (name) => {
+    if (!name) return '';
+    switch (name) {
+        case 'pushpulllegs': return 'Push Pull Legs';
+        case 'arnoldsplit':  return 'Arnold Split';
+        case 'fullbody':     return 'Full Body';
+        case 'upperlower':   return 'Upper Lower';
+        case 'brosplit':     return 'Bro Split';
+        case 'pplxarnold':   return 'PPL x Arnold';
+        case 'pplxul':       return 'PPL x UL';
+        default:
+            return name.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+    }
+};
+
+const formatDate = (dateStr) => {
+    if (!dateStr) return '—';
+    return new Date(dateStr).toLocaleDateString('en-US', {
+        month: 'short', day: 'numeric', year: 'numeric',
+    });
+};
 
 const Completed = () => {
     const navigation = useNavigation();
-    const { token, user } = useContext(AuthContext);
     const [activeTab, setActiveTab] = useState('Completed');
     const slideAnim = useRef(new Animated.Value(0)).current;
     const tabs = ['Completed', 'Sessions', 'Workouts'];
@@ -25,19 +63,11 @@ const Completed = () => {
 
     const fetchCompletedSessions = async () => {
         try {
-            const res = await fetch(`http://192.168.100.7:5000/api/workouts/get/sessions/${user.id}`, {
-                method: "GET",
-                headers: {
-                    "Content-Type": "application/json",
-                    "Authorization": `Bearer ${token}`
-                },
-            });
-            const data = await res.json();
+            const data = await getSessions();
             const list = Array.isArray(data) ? data : [];
-            const completed = list.filter((item) => item.statue === 'complete');
-            setSessions(completed);
+            setSessions(list.filter((item) => item.statue === 'complete'));
         } catch (error) {
-            console.error("Error fetching completed sessions:", error);
+            console.error('Error fetching completed sessions:', error);
             setSessions([]);
         }
     };
@@ -50,14 +80,50 @@ const Completed = () => {
             tension: 80,
             friction: 10,
         }).start();
+        if (tab === 'Completed')   navigation.navigate('Completed');
+        else if (tab === 'Sessions') navigation.navigate('Home');
+        else if (tab === 'Workouts') navigation.navigate('Sports');
+    };
 
-        if (tab === 'Completed') {
-            navigation.navigate('Completed');
-        } else if (tab === 'Sessions') {
-            navigation.navigate('Home');
-        } else if (tab === 'Workouts') {
-            navigation.navigate('Sports');
-        }
+    const renderItem = ({ item }) => {
+        const img = getImageForWorkout(item.workout_name);
+        return (
+            <Pressable
+                style={({ pressed }) => [styles.card, pressed && { opacity: 0.9 }]}
+                onPress={() => navigation.navigate('Chart', { sessionID: item.id })}
+            >
+                <ImageBackground source={img} style={styles.cardBg} imageStyle={styles.cardImg}>
+                    <View style={styles.overlay} />
+                    <View style={styles.cardInner}>
+                        <View style={styles.topRow}>
+                            <View>
+                                <Text style={styles.label}>WORKOUT</Text>
+                                <Text style={styles.title}>{formatWorkoutName(item.workout_name)}</Text>
+                            </View>
+                            <View style={styles.statusBadge}>
+                                <View style={styles.dot} />
+                                <Text style={styles.statusText}>Completed</Text>
+                            </View>
+                        </View>
+                        <View style={styles.bottomRow}>
+                            <View style={styles.dates}>
+                                <View>
+                                    <Text style={styles.dateLabel}>Started at</Text>
+                                    <Text style={styles.dateValue}>{formatDate(item.started_at)}</Text>
+                                </View>
+                                <View>
+                                    <Text style={styles.dateLabel}>Ended at</Text>
+                                    <Text style={styles.dateValue}>{formatDate(item.end_at)}</Text>
+                                </View>
+                            </View>
+                            <View style={styles.reportHintWrap}>
+                                <Text style={styles.reportHint}>View report →</Text>
+                            </View>
+                        </View>
+                    </View>
+                </ImageBackground>
+            </Pressable>
+        );
     };
 
     return (
@@ -106,18 +172,7 @@ const Completed = () => {
                     keyExtractor={(item) => item.id.toString()}
                     contentContainerStyle={g.listContent}
                     showsVerticalScrollIndicator={false}
-                    renderItem={({ item }) => (
-                        <Pressable
-                            style={({ pressed }) => [styles.card, pressed && { opacity: 0.85 }]}
-                            onPress={() => navigation.navigate('Chart', { sessionID: item.id })}
-                        >
-                            <Text style={styles.workout}>{item.workout_name}</Text>
-                            <Text style={styles.meta}>
-                                {new Date(item.started_at).toLocaleDateString()} - {new Date(item.end_at).toLocaleDateString()}
-                            </Text>
-                            <Text style={styles.reportHint}>Tap to view full progress report</Text>
-                        </Pressable>
-                    )}
+                    renderItem={renderItem}
                 />
             )}
         </SafeAreaView>
@@ -127,35 +182,23 @@ const Completed = () => {
 export default Completed;
 
 const styles = StyleSheet.create({
-    emptyWrap: {
-        flex: 1,
-        justifyContent: 'center',
-        alignItems: 'center',
-    },
-    emptyText: {
-        color: '#888',
-        fontSize: 16,
-    },
-    card: {
-        backgroundColor: '#1a1a1a',
-        borderWidth: 1,
-        borderColor: '#2a2a2a',
-        borderRadius: 16,
-        padding: 14,
-        gap: 6,
-    },
-    workout: {
-        color: '#fff',
-        fontSize: 18,
-        fontWeight: '700',
-    },
-    meta: {
-        color: '#aaa',
-        fontSize: 12,
-    },
-    reportHint: {
-        color: '#ff6600',
-        fontSize: 12,
-        marginTop: 2,
-    },
+    card:          { borderRadius: 16, overflow: 'hidden', height: 160, marginBottom: 14, borderWidth: 0.5, borderColor: '#2a2a2a', elevation: 16, shadowColor: '#000', shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.6, shadowRadius: 16 },
+    cardBg:        { flex: 1 },
+    cardImg:       { borderRadius: 16 },
+    overlay:       { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.72)' },
+    cardInner:     { flex: 1, padding: 14, justifyContent: 'space-between' },
+    topRow:        { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
+    label:         { fontSize: 10, color: 'rgba(255,255,255,0.45)', letterSpacing: 1.2 },
+    title:         { fontSize: 18, fontWeight: '500', color: '#fff', marginTop: 3 },
+    statusBadge:   { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: 'rgba(0,0,0,0.45)', borderRadius: 20, paddingHorizontal: 10, paddingVertical: 5, borderWidth: 0.5, borderColor: 'rgba(255,255,255,0.12)' },
+    dot:           { width: 8, height: 8, borderRadius: 4, backgroundColor: '#f87171' },
+    statusText:    { fontSize: 11, color: 'rgba(255,255,255,0.85)' },
+    bottomRow:     { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end' },
+    dates:         { flexDirection: 'row', gap: 18 },
+    dateLabel:     { fontSize: 10, color: 'rgba(255,255,255,0.45)' },
+    dateValue:     { fontSize: 12, color: 'rgba(255,255,255,0.85)', marginTop: 3 },
+    reportHintWrap:{ alignItems: 'flex-end' },
+    reportHint:    { fontSize: 12, color: '#ff6600', fontWeight: '600' },
+    emptyWrap:     { flex: 1, justifyContent: 'center', alignItems: 'center' },
+    emptyText:     { color: '#888', fontSize: 16 },
 });

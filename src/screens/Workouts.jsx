@@ -1,14 +1,13 @@
-import { useContext, useState, useEffect, useCallback, useRef } from 'react';
-import { View, Text, FlatList, Pressable, ImageBackground, Modal, TextInput, ScrollView, Animated } from 'react-native';
+import { useState, useCallback, useRef } from 'react';
+import { View, Text, FlatList, Pressable, ImageBackground, Modal, TextInput, ScrollView, Animated, StyleSheet } from 'react-native';
 import { SafeAreaView } from "react-native-safe-area-context";
-import { AuthContext } from '../context/AuthContext';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
+import { getWorkouts, addWorkoutNonDefault, deleteWorkout } from '../controllers/workout_controllers';
 import g from '../styles/globalStyles';
 
 const Workouts = (props) => {
     const navigation = useNavigation();
     const { sportID } = props.route.params;
-    const { token } = useContext(AuthContext);
     const [activeTab, setActiveTab] = useState('Workouts');
     const slideAnim = useRef(new Animated.Value(2)).current;
     const tabs = ['Completed', 'Sessions', 'Workouts'];
@@ -17,123 +16,84 @@ const Workouts = (props) => {
 
     const [workouts, setWorkouts] = useState([]);
     const [isModelOpen, setIsModelOpen] = useState(false);
-    const [workoutName, setWorkoutName] = useState("");
-    const [workoutDescription, setWorkoutDescription] = useState("");
-    useEffect(() => {
-    }, []);
+    const [workoutName, setWorkoutName] = useState('');
+    const [workoutDescription, setWorkoutDescription] = useState('');
+
     useFocusEffect(useCallback(() => { fetchWorkouts(); }, [sportID]));
-    useFocusEffect(
-        useCallback(() => {
-            setActiveTab('Workouts');
-            slideAnim.setValue(2);
-        }, [slideAnim])
-    );
+    useFocusEffect(useCallback(() => {
+        setActiveTab('Workouts');
+        slideAnim.setValue(2);
+    }, [slideAnim]));
 
     const handleTabPress = (tab, index) => {
         setActiveTab(tab);
-        Animated.spring(slideAnim, {
-            toValue: index,
-            useNativeDriver: true,
-            tension: 80,
-            friction: 10,
-        }).start();
-
-        if (tab === 'Completed') {
-            navigation.navigate('Completed');
-        } else if (tab === 'Sessions') {
-            navigation.navigate('Home');
-        } else if (tab === 'Workouts') {
-            navigation.navigate('Sports');
-        }
+        Animated.spring(slideAnim, { toValue: index, useNativeDriver: true, tension: 80, friction: 10 }).start();
+        if (tab === 'Completed')    navigation.navigate('Completed');
+        else if (tab === 'Sessions')  navigation.navigate('Home');
+        else if (tab === 'Workouts')  navigation.navigate('Sports');
     };
 
     const fetchWorkouts = async () => {
         try {
-            const res = await fetch(`http://192.168.100.7:5000/api/workouts/get/${sportID}`, {
-                method: "GET",
-                headers: {
-                    "Content-Type": "application/json",
-                    "Authorization": `Bearer ${token}`
-                },
-            });
-            const data = await res.json();
-            setWorkouts(data);
+            const data = await getWorkouts(sportID);
+            setWorkouts(Array.isArray(data) ? data : []);
         } catch (error) {
-            console.error("Error fetching workouts:", error);
-        }
-    };
-    const getImageForWorkout = (workoutName) => {
-        switch (workoutName) {
-            case "pushpulllegs": return require('../assets/pushpulllegs.jpg');
-            case "arnoldsplit": return require('../assets/arnoldsplit.jpg');
-            case "fullbody": return require('../assets/fullbody.jpg');
-            case "upperlower": return require('../assets/upperlower.jpg');
-            case "brosplit": return require('../assets/brosplit.jpg');
-            case "pplxarnold": return require('../assets/pplxarnold.jpg');
-            case "pplxul": return require('../assets/pplxul.jpg');
-            default: return null;
-        }
-    };
-    const formatWorkoutName = (name) => {
-        if (!name) return "";
-        switch (name) {
-            case "pushpulllegs": return "Push Pull Legs";
-            case "arnoldsplit": return "Arnold Split";
-            case "fullbody": return "Full Body";
-            case "upperlower": return "Upper Lower";
-            case "brosplit": return "Bro Split";
-            case "pplxarnold": return "PPL x Arnold";
-            case "pplxul": return "PPL x UL";
-            default:
-                return name.split(' ').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ');
+            console.error('Error fetching workouts:', error);
         }
     };
 
+    const workoutImages = [
+        require('../assets/pushpulllegs.jpg'),
+        require('../assets/arnoldsplit.jpg'),
+        require('../assets/fullbody.jpg'),
+        require('../assets/upperlower.jpg'),
+        require('../assets/brosplit.jpg'),
+        require('../assets/pplxarnold.jpg'),
+        require('../assets/pplxul.jpg'),
+    ];
+
+    const getImageForWorkout = () =>
+        workoutImages[Math.floor(Math.random() * workoutImages.length)];
+
+    const formatWorkoutName = (name) => {
+        if (!name) return '';
+        switch (name) {
+            case 'pushpulllegs': return 'Push Pull Legs';
+            case 'arnoldsplit':  return 'Arnold Split';
+            case 'fullbody':     return 'Full Body';
+            case 'upperlower':   return 'Upper Lower';
+            case 'brosplit':     return 'Bro Split';
+            case 'pplxarnold':   return 'PPL x Arnold';
+            case 'pplxul':       return 'PPL x UL';
+            default:
+                return name.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+        }
+    };
 
     const handleAddWorkoutNonDefault = async () => {
         try {
-            const res = await fetch(`http://192.168.100.7:5000/api/workouts/addNonDefault`, {
-                method: "POST",
-                headers: {
-                    "Content-Type": "application/json",
-                    "Authorization": `Bearer ${token}`
-                },
-                body: JSON.stringify({ sportID, workoutName, workoutDescription }),
+            const data = await addWorkoutNonDefault(sportID, workoutName, workoutDescription);
+            navigation.navigate('Create', {
+                workoutID: data.workoutID,
+                sportID,
+                sportName: props.route.params.sportName,
             });
-            const data = await res.json();
-            if (!res.ok) {
-                alert(data.message || "Error adding workout");
-            } else {
-                navigation.navigate('Create', { workoutID: data.workoutID, sportID, sportName: props.route.params.sportName });
-            }
         } catch (error) {
-            console.error("Error adding workout:", error);
+            alert(error.message || 'Error adding workout');
         }
     };
 
     const handleDeleteWorkout = async (workoutID) => {
         try {
-            const res = await fetch(`http://192.168.100.7:5000/api/workouts/delete/${workoutID}`, {
-                method: "DELETE",
-                headers: {
-                    "Content-Type": "application/json",
-                    "Authorization": `Bearer ${token}`
-                },
-            });
-            if (res.ok) {
-                fetchWorkouts();
-
-            } else {
-                const data = await res.json();
-                alert(data.message || "Error deleting workout");
-            }
+            await deleteWorkout(workoutID);
+            fetchWorkouts();
         } catch (error) {
-            console.error("Error deleting workout:", error);
+            alert(error.message || 'Error deleting workout');
         }
     };
 
     const renderWorkoutItem = ({ item }) => {
-        const img = getImageForWorkout(item.workout_name);
+        const img = getImageForWorkout();
         return (
             <View style={{ position: 'relative' }}>
                 <Pressable
@@ -147,14 +107,11 @@ const Workouts = (props) => {
                     <ImageBackground source={img} style={g.cardImage} imageStyle={g.cardImageStyle} resizeMode="cover">
                         <View style={g.cardOverlay} />
                         <View style={g.cardContent}>
-                            <Text style={g.cardLabel}>
-                                {formatWorkoutName(item.workout_name)}
-                            </Text>
+                            <Text style={g.cardLabel}>{formatWorkoutName(item.workout_name)}</Text>
                             <View style={g.cardAccent} />
                         </View>
                     </ImageBackground>
                 </Pressable>
-                {/* ✕ delete button — top right corner of the card */}
                 <Pressable
                     style={({ pressed }) => [styles.deleteBtn, pressed && styles.deleteBtnPressed]}
                     onPress={() => handleDeleteWorkout(item.workout_id)}
@@ -164,8 +121,6 @@ const Workouts = (props) => {
             </View>
         );
     };
-
-
 
     return (
         <SafeAreaView style={[g.container, { alignItems: 'stretch', justifyContent: 'space-between', paddingHorizontal: 0 }]}>
@@ -194,13 +149,12 @@ const Workouts = (props) => {
                             style={[g.tab, { flex: 1, width: 'auto' }]}
                             onPress={() => handleTabPress(tab, index)}
                         >
-                            <Text style={[g.tabText, activeTab === tab && g.tabTextActive]}>
-                                {tab}
-                            </Text>
+                            <Text style={[g.tabText, activeTab === tab && g.tabTextActive]}>{tab}</Text>
                         </Pressable>
                     ))}
                 </View>
             </View>
+
             <FlatList
                 style={g.list}
                 data={workouts}
@@ -209,14 +163,17 @@ const Workouts = (props) => {
                 contentContainerStyle={g.listContent}
                 showsVerticalScrollIndicator={false}
             />
+
             <Pressable style={g.buttonOutline} onPress={() => setIsModelOpen(true)}>
                 <Text style={g.buttonOutlineText}>+ Add Workout</Text>
             </Pressable>
+
             <Modal
                 animationType="slide"
                 transparent={true}
                 visible={isModelOpen}
-                onRequestClose={() => setIsModelOpen(false)}>
+                onRequestClose={() => setIsModelOpen(false)}
+            >
                 <View style={g.modalOverlay}>
                     <View style={g.modalContainer}>
                         <Text style={g.modalTitle}>Add Workout</Text>
@@ -241,7 +198,6 @@ const Workouts = (props) => {
                                 </Pressable>
                             </View>
                         </ScrollView>
-
                     </View>
                 </View>
             </Modal>
@@ -251,29 +207,8 @@ const Workouts = (props) => {
 
 export default Workouts;
 
-import { StyleSheet } from 'react-native';
 const styles = StyleSheet.create({
-    deleteBtn: {
-        position: 'absolute',
-        top: 10,
-        right: 10,
-        width: 28,
-        height: 28,
-        borderRadius: 8,
-        backgroundColor: 'rgba(30,0,0,0.75)',
-        borderWidth: 1,
-        borderColor: '#ff2222',
-        alignItems: 'center',
-        justifyContent: 'center',
-        zIndex: 10,
-    },
-    deleteBtnPressed: {
-        backgroundColor: '#ff2222',
-        transform: [{ scale: 0.92 }],
-    },
-    deleteIcon: {
-        color: '#ff4444',
-        fontSize: 12,
-        fontWeight: '700',
-    },
+    deleteBtn:        { position: 'absolute', top: 10, right: 10, width: 28, height: 28, borderRadius: 8, backgroundColor: 'rgba(30,0,0,0.75)', borderWidth: 1, borderColor: '#ff2222', alignItems: 'center', justifyContent: 'center', zIndex: 10 },
+    deleteBtnPressed: { backgroundColor: '#ff2222', transform: [{ scale: 0.92 }] },
+    deleteIcon:       { color: '#ff4444', fontSize: 12, fontWeight: '700' },
 });

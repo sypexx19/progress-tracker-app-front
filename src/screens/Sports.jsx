@@ -1,12 +1,11 @@
-import { useContext, useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { View, Text, Pressable, FlatList, Modal, ImageBackground, ScrollView, Animated } from 'react-native';
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
-import { AuthContext } from '../context/AuthContext';
+import { getSports, getSportsDefault, addSport } from '../controllers/sport_controllers';
 import g from '../styles/globalStyles';
 
 const Sports = () => {
-
     const navigation = useNavigation();
     const [activeTab, setActiveTab] = useState('Workouts');
     const slideAnim = useRef(new Animated.Value(2)).current;
@@ -14,23 +13,6 @@ const Sports = () => {
     const [tabContainerWidth, setTabContainerWidth] = useState(0);
     const tabWidth = tabContainerWidth > 8 ? (tabContainerWidth - 8) / tabs.length : 0;
 
-    const handleTabPress = (tab, index) => {
-        setActiveTab(tab);
-        Animated.spring(slideAnim, {
-            toValue: index,
-            useNativeDriver: true,
-            tension: 80,
-            friction: 10,
-        }).start();
-        if (tab === 'Completed') {
-            navigation.navigate('Completed');
-        } else if (tab === 'Sessions') {
-            navigation.navigate('Home');
-        } else if (tab === 'Workouts') {
-            navigation.navigate('Sports');
-        }
-    };
-    const { user, token } = useContext(AuthContext);
     const [sports, setSports] = useState([]);
     const [sportsDefault, setSportsDefault] = useState([]);
     const [isModelOpen, setIsModelOpen] = useState(false);
@@ -44,10 +26,10 @@ const Sports = () => {
 
     const getImageForSport = (sportName) => {
         switch (sportName) {
-            case "bodybuilding": return require('../assets/bodybuilding.jpg');
-            case "boxing": return require('../assets/boxing.jpg');
-            case "crossfit": return require('../assets/crossfit.jpg');
-            case "calisthenics": return require('../assets/calesthinics.jpg');
+            case 'bodybuilding': return require('../assets/bodybuilding.jpg');
+            case 'boxing':       return require('../assets/boxing.jpg');
+            case 'crossfit':     return require('../assets/crossfit.jpg');
+            case 'calisthenics': return require('../assets/calesthinics.jpg');
             default: return null;
         }
     };
@@ -59,54 +41,42 @@ const Sports = () => {
 
     const fetchSports = async () => {
         try {
-            const res = await fetch("http://192.168.100.7:5000/api/sports/get", {
-                method: "GET",
-                headers: {
-                    "Content-Type": "application/json",
-                    "Authorization": `Bearer ${token}`
-                },
-            });
-            const data = await res.json();
-            setSports(data);
+            const data = await getSports();
+            setSports(Array.isArray(data) ? data : []);
         } catch (error) {
-            console.error("Error fetching sports:", error);
+            console.error('Error fetching sports:', error);
         }
     };
 
     const fetchSportsDefault = async () => {
         try {
-            const res = await fetch("http://192.168.100.7:5000/api/sports/get/default", {
-                method: "GET",
-                headers: {
-                    "Content-Type": "application/json",
-                },
-            });
-            const data = await res.json();
-            setSportsDefault(data);
+            const data = await getSportsDefault();
+            setSportsDefault(Array.isArray(data) ? data : []);
         } catch (error) {
-            console.error("Error fetching sports:", error);
+            console.error('Error fetching default sports:', error);
         }
     };
 
     const handleAddSport = async (sport_name) => {
         try {
-            const res = await fetch("http://192.168.100.7:5000/api/sports/add", {
-                method: "POST",
-                headers: {
-                    "Content-Type": "application/json",
-                    "Authorization": `Bearer ${token}`
-                },
-                body: JSON.stringify({ name: sport_name }),
-            });
-            const data = await res.json();
-            if (!res.ok) {
-                alert(data.message);
-            } else {
-                fetchSports();
-            }
+            await addSport(sport_name);
+            fetchSports();
         } catch (error) {
-            console.error("Error adding sport:", error);
+            alert(error.message || 'Error adding sport');
         }
+    };
+
+    const handleTabPress = (tab, index) => {
+        setActiveTab(tab);
+        Animated.spring(slideAnim, {
+            toValue: index,
+            useNativeDriver: true,
+            tension: 80,
+            friction: 10,
+        }).start();
+        if (tab === 'Completed')    navigation.navigate('Completed');
+        else if (tab === 'Sessions')  navigation.navigate('Home');
+        else if (tab === 'Workouts')  navigation.navigate('Sports');
     };
 
     const renderSportItem = ({ item }) => {
@@ -143,7 +113,6 @@ const Sports = () => {
                     style={g.tabContainer}
                     onLayout={(e) => setTabContainerWidth(e.nativeEvent.layout.width)}
                 >
-
                     <Animated.View
                         style={[
                             g.slidingPill,
@@ -153,27 +122,25 @@ const Sports = () => {
                                     translateX: slideAnim.interpolate({
                                         inputRange: tabs.map((_, idx) => idx),
                                         outputRange: tabs.map((_, idx) => idx * tabWidth),
-                                    })
-                                }]
-                            }
+                                    }),
+                                }],
+                            },
                         ]}
                     />
                     {tabs.map((tab, index) => (
                         <Pressable
                             key={tab}
                             style={[g.tab, { flex: 1, width: 'auto' }]}
-                            onPress={() => { handleTabPress(tab, index) }}
+                            onPress={() => handleTabPress(tab, index)}
                         >
-                            <Text style={[
-                                g.tabText,
-                                activeTab === tab && g.tabTextActive
-                            ]}>
+                            <Text style={[g.tabText, activeTab === tab && g.tabTextActive]}>
                                 {tab}
                             </Text>
                         </Pressable>
                     ))}
                 </View>
             </View>
+
             <FlatList
                 style={g.list}
                 data={sports}
@@ -217,7 +184,8 @@ const Sports = () => {
                                                 </View>
                                             </ImageBackground>
                                         </Pressable>
-                                    )))}
+                                    ))
+                                )}
                             </View>
                         </ScrollView>
                     </View>

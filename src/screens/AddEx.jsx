@@ -1,31 +1,14 @@
-import { useContext, useState, useCallback } from 'react';
 import { View, Text, FlatList, StyleSheet, Pressable, Alert } from 'react-native';
 import { SafeAreaView } from "react-native-safe-area-context";
-import { AuthContext } from '../context/AuthContext';
 import { useNavigation } from '@react-navigation/native';
+import { useExerciseQueue } from '../context/ExerciseQueueContext';
+import { addExercise } from '../controllers/exercises_controllers';
 import g from '../styles/globalStyles';
 
 const AddEx = (props) => {
     const { workoutID, dayID } = props.route.params;
-    const { token } = useContext(AuthContext);
     const navigation = useNavigation();
-
-    // Pending queue — accumulates all exercises the user selects
-    const [pendingExercises, setPendingExercises] = useState([]);
-
-    // This callback is passed down to TypeEx → SelectEx.
-    // SelectEx calls it directly, so the exercise is appended here without
-    // losing any previously added ones.
-    const handleAddExercise = useCallback((newExercise) => {
-        setPendingExercises(prev => [
-            ...prev,
-            { ...newExercise, key: `${newExercise.sourceId}_${Date.now()}` }
-        ]);
-    }, []);
-
-    const handleRemove = (key) => {
-        setPendingExercises(prev => prev.filter(ex => ex.key !== key));
-    };
+    const { pendingExercises, removeExercise, clearQueue } = useExerciseQueue();
 
     const handleSave = async () => {
         if (pendingExercises.length === 0) {
@@ -33,22 +16,11 @@ const AddEx = (props) => {
             return;
         }
         try {
-            const res = await fetch(`http://192.168.100.7:5000/api/exercises/add`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${token}`,
-                },
-                body: JSON.stringify({ dayID, exercises: pendingExercises }),
-            });
-            if (res.ok) {
-                navigation.goBack();
-            } else {
-                const err = await res.json();
-                Alert.alert('Error', err.message || 'Failed to save exercises');
-            }
+            await addExercise(dayID, pendingExercises);
+            clearQueue();
+            navigation.goBack();
         } catch (error) {
-            Alert.alert('Error', 'Server error: ' + error.message);
+            Alert.alert('Error', 'Failed to save exercises: ' + error.message);
         }
     };
 
@@ -60,7 +32,7 @@ const AddEx = (props) => {
                     {item.sets} sets · {item.reps} reps · {item.weight} kg · {item.rest}s rest
                 </Text>
             </View>
-            <Pressable onPress={() => handleRemove(item.key)} style={styles.removeBtn}>
+            <Pressable onPress={() => removeExercise(item.key)} style={styles.removeBtn}>
                 <Text style={styles.removeIcon}>✕</Text>
             </Pressable>
         </View>
@@ -68,8 +40,6 @@ const AddEx = (props) => {
 
     return (
         <SafeAreaView style={[g.container, { alignItems: 'stretch', paddingHorizontal: 0 }]}>
-
-            {/* Pending queue */}
             {pendingExercises.length > 0 && (
                 <View style={styles.pendingSection}>
                     <Text style={styles.pendingTitle}>
@@ -79,13 +49,12 @@ const AddEx = (props) => {
                         data={pendingExercises}
                         keyExtractor={(item) => item.key}
                         renderItem={renderPendingItem}
-                        scrollEnabled={false}
                         contentContainerStyle={{ gap: 10 }}
+                        showsVerticalScrollIndicator={false}
                     />
                 </View>
             )}
 
-            {/* Empty state */}
             {pendingExercises.length === 0 && (
                 <View style={styles.empty}>
                     <Text style={styles.emptyText}>No exercises added yet.</Text>
@@ -93,18 +62,10 @@ const AddEx = (props) => {
                 </View>
             )}
 
-            {/* Bottom buttons */}
             <View style={styles.bottomButtons}>
                 <Pressable
                     style={g.buttonOutline}
-                    onPress={() =>
-                        // Pass the callback to TypeEx so it reaches SelectEx
-                        navigation.navigate('TypeEx', {
-                            workoutID,
-                            dayID,
-                            onAddExercise: handleAddExercise,
-                        })
-                    }
+                    onPress={() => navigation.navigate('TypeEx', { workoutID, dayID })}
                 >
                     <Text style={g.buttonOutlineText}>+ Add Exercise</Text>
                 </Pressable>
@@ -114,7 +75,9 @@ const AddEx = (props) => {
                     onPress={handleSave}
                     disabled={pendingExercises.length === 0}
                 >
-                    <Text style={g.buttonText}>Save</Text>
+                    <Text style={g.buttonText}>
+                        Save {pendingExercises.length > 0 ? `(${pendingExercises.length})` : ''}
+                    </Text>
                 </Pressable>
             </View>
         </SafeAreaView>

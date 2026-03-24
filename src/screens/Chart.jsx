@@ -1,13 +1,13 @@
-import { useContext, useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, FlatList, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { AuthContext } from '../context/AuthContext';
+import { getSessionDays, getSessionExercises } from '../controllers/session_controllers';
 
 const METRICS = [
     { key: 'weight', label: 'Weight (kg)', color: '#ff6600' },
-    { key: 'reps', label: 'Reps', color: '#4ade80' },
-    { key: 'sets', label: 'Sets', color: '#60a5fa' },
-    { key: 'rest', label: 'Rest (s)', color: '#f59e0b' },
+    { key: 'reps',   label: 'Reps',        color: '#4ade80' },
+    { key: 'sets',   label: 'Sets',        color: '#60a5fa' },
+    { key: 'rest',   label: 'Rest (s)',    color: '#f59e0b' },
 ];
 
 const MetricBars = ({ points, metric, color }) => {
@@ -37,7 +37,6 @@ const MetricBars = ({ points, metric, color }) => {
 
 const Chart = (props) => {
     const { sessionID } = props.route.params;
-    const { token } = useContext(AuthContext);
     const [loading, setLoading] = useState(true);
     const [exerciseSeries, setExerciseSeries] = useState([]);
 
@@ -48,30 +47,11 @@ const Chart = (props) => {
     const fetchChartData = async () => {
         setLoading(true);
         try {
-            const daysRes = await fetch(`http://192.168.100.7:5000/api/session/get/${sessionID}`, {
-                method: 'GET',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${token}`,
-                },
-            });
-            const daysText = await daysRes.text();
-            const daysData = daysText ? JSON.parse(daysText) : [];
+            const daysData = await getSessionDays(sessionID);
             const days = Array.isArray(daysData) ? daysData : [];
 
             const exResults = await Promise.all(
-                days.map(async (day) => {
-                    const res = await fetch(`http://192.168.100.7:5000/api/session/getEx/${day.id}`, {
-                        method: 'GET',
-                        headers: {
-                            'Content-Type': 'application/json',
-                            'Authorization': `Bearer ${token}`,
-                        },
-                    });
-                    const text = await res.text();
-                    const data = text ? JSON.parse(text) : [];
-                    return Array.isArray(data) ? data : [];
-                })
+                days.map((day) => getSessionExercises(day.id))
             );
 
             const map = new Map();
@@ -82,18 +62,16 @@ const Chart = (props) => {
                     ex_name: exercise.ex_name,
                     points: [],
                 };
-
                 const logs = Array.isArray(exercise.logs) ? exercise.logs : [];
                 logs.forEach((log) => {
                     existing.points.push({
                         weight: Number(log.weight ?? 0),
-                        reps: Number(log.reps ?? 0),
-                        sets: Number(log.sets ?? 0),
-                        rest: Number(log.rest ?? 0),
+                        reps:   Number(log.reps   ?? 0),
+                        sets:   Number(log.sets   ?? 0),
+                        rest:   Number(log.rest   ?? 0),
                         created_at: log.created_at,
                     });
                 });
-
                 map.set(key, existing);
             });
 
@@ -124,7 +102,6 @@ const Chart = (props) => {
         <View style={styles.card}>
             <Text style={styles.exerciseName}>{item.ex_name}</Text>
             <Text style={styles.logsCount}>{item.points.length} logs</Text>
-
             {METRICS.map((m) => (
                 <View key={m.key} style={styles.metricBlock}>
                     <Text style={styles.metricTitle}>{m.label}</Text>
@@ -148,7 +125,6 @@ const Chart = (props) => {
             <Text style={styles.subtitle}>
                 {exerciseSeries.length} exercises - {totalLogs} total logs
             </Text>
-
             {exerciseSeries.length === 0 ? (
                 <View style={styles.center}>
                     <Text style={styles.emptyText}>No logs found for this session.</Text>
@@ -169,93 +145,21 @@ const Chart = (props) => {
 export default Chart;
 
 const styles = StyleSheet.create({
-    container: {
-        flex: 1,
-        backgroundColor: '#111',
-    },
-    center: {
-        flex: 1,
-        alignItems: 'center',
-        justifyContent: 'center',
-    },
-    title: {
-        color: '#ff6600',
-        fontSize: 24,
-        fontWeight: '700',
-        paddingHorizontal: 16,
-        paddingTop: 16,
-    },
-    subtitle: {
-        color: '#aaa',
-        fontSize: 13,
-        paddingHorizontal: 16,
-        paddingTop: 4,
-    },
-    listContent: {
-        padding: 16,
-        gap: 14,
-    },
-    card: {
-        backgroundColor: '#1a1a1a',
-        borderColor: '#2a2a2a',
-        borderWidth: 1,
-        borderRadius: 14,
-        padding: 14,
-        gap: 12,
-    },
-    exerciseName: {
-        color: '#fff',
-        fontSize: 18,
-        fontWeight: '700',
-    },
-    logsCount: {
-        color: '#999',
-        fontSize: 12,
-        marginTop: -6,
-    },
-    metricBlock: {
-        gap: 8,
-    },
-    metricTitle: {
-        color: '#ddd',
-        fontSize: 13,
-        fontWeight: '600',
-    },
-    metricWrap: {
-        borderWidth: 1,
-        borderColor: '#2a2a2a',
-        borderRadius: 10,
-        backgroundColor: '#131313',
-        paddingVertical: 8,
-        paddingHorizontal: 6,
-    },
-    barsRow: {
-        flexDirection: 'row',
-        alignItems: 'flex-end',
-        gap: 10,
-        minHeight: 110,
-        paddingHorizontal: 4,
-    },
-    barItem: {
-        width: 30,
-        alignItems: 'center',
-        justifyContent: 'flex-end',
-        gap: 4,
-    },
-    barValue: {
-        color: '#bbb',
-        fontSize: 10,
-    },
-    bar: {
-        width: 20,
-        borderRadius: 5,
-    },
-    barLabel: {
-        color: '#777',
-        fontSize: 10,
-    },
-    emptyText: {
-        color: '#666',
-        fontSize: 16,
-    },
+    container:     { flex: 1, backgroundColor: '#111' },
+    center:        { flex: 1, alignItems: 'center', justifyContent: 'center' },
+    title:         { color: '#ff6600', fontSize: 24, fontWeight: '700', paddingHorizontal: 16, paddingTop: 16 },
+    subtitle:      { color: '#aaa', fontSize: 13, paddingHorizontal: 16, paddingTop: 4 },
+    listContent:   { padding: 16, gap: 14 },
+    card:          { backgroundColor: '#1a1a1a', borderColor: '#2a2a2a', borderWidth: 1, borderRadius: 14, padding: 14, gap: 12 },
+    exerciseName:  { color: '#fff', fontSize: 18, fontWeight: '700' },
+    logsCount:     { color: '#999', fontSize: 12, marginTop: -6 },
+    metricBlock:   { gap: 8 },
+    metricTitle:   { color: '#ddd', fontSize: 13, fontWeight: '600' },
+    metricWrap:    { borderWidth: 1, borderColor: '#2a2a2a', borderRadius: 10, backgroundColor: '#131313', paddingVertical: 8, paddingHorizontal: 6 },
+    barsRow:       { flexDirection: 'row', alignItems: 'flex-end', gap: 10, minHeight: 110, paddingHorizontal: 4 },
+    barItem:       { width: 30, alignItems: 'center', justifyContent: 'flex-end', gap: 4 },
+    barValue:      { color: '#bbb', fontSize: 10 },
+    bar:           { width: 20, borderRadius: 5 },
+    barLabel:      { color: '#777', fontSize: 10 },
+    emptyText:     { color: '#666', fontSize: 16 },
 });

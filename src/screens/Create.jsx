@@ -1,8 +1,8 @@
-import { useContext, useState, useEffect, useCallback } from 'react';
+import { useState, useCallback } from 'react';
 import { View, Text, FlatList, StyleSheet, Pressable, Modal, TextInput, ScrollView } from 'react-native';
 import { SafeAreaView } from "react-native-safe-area-context";
-import { AuthContext } from '../context/AuthContext';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
+import { getDays, addDay } from '../controllers/days_controllers';
 import g from '../styles/globalStyles';
 
 const DayItem2 = ({ item, index, workoutID }) => {
@@ -25,7 +25,6 @@ const DayItem2 = ({ item, index, workoutID }) => {
 
 const Create = (props) => {
     const { workoutID, sportID, sportName } = props.route.params;
-    const { token } = useContext(AuthContext);
     const navigation = useNavigation();
     const [days, setDays] = useState([]);
     const [isModelOpen, setIsModelOpen] = useState(false);
@@ -33,21 +32,13 @@ const Create = (props) => {
 
     const fetchWorkoutDays = async () => {
         try {
-            const res = await fetch(`http://192.168.100.7:5000/api/days/get/${workoutID}`, {
-                method: "GET",
-                headers: {
-                    "Content-Type": "application/json",
-                    "Authorization": `Bearer ${token}`
-                },
-            });
-            const data = await res.json();
+            const data = await getDays(workoutID);
             setDays(Array.isArray(data) ? data : []);
         } catch (error) {
-            console.error("Error fetching workout days:", error);
+            console.error('Error fetching workout days:', error);
         }
     };
 
-    // Refresh days every time the screen comes into focus (handles back navigation)
     useFocusEffect(
         useCallback(() => {
             fetchWorkoutDays();
@@ -56,24 +47,15 @@ const Create = (props) => {
 
     const handleAddDay = async () => {
         if (!dayName.trim()) return;
-        const WorkoutId = parseInt(workoutID, 10);
         try {
-            const res = await fetch(`http://192.168.100.7:5000/api/days/add/${WorkoutId}`, {
-                method: "POST",
-                headers: {
-                    "Content-Type": "application/json",
-                    "Authorization": `Bearer ${token}`
-                },
-                body: JSON.stringify({ dayName }),
-            });
-            const data = await res.json();
+            const data = await addDay(parseInt(workoutID, 10), dayName);
             setDayName('');
-            await fetchWorkoutDays(); // refresh list
+            await fetchWorkoutDays();
             if (data.dayId) {
                 navigation.navigate('AddEx', { workoutID, dayID: data.dayId });
             }
         } catch (error) {
-            console.error("Error adding day:", error);
+            console.error('Error adding day:', error);
         }
     };
 
@@ -87,19 +69,21 @@ const Create = (props) => {
                 contentContainerStyle={g.listContent}
                 showsVerticalScrollIndicator={false}
             />
-                <Pressable style={[g.buttonOutline, { marginHorizontal: 16, marginBottom: 10 }]} onPress={() => setIsModelOpen(true)}>
-                    <Text style={g.buttonOutlineText}> Add Day </Text>
-                </Pressable>
-                <Pressable style={[g.button,{ marginHorizontal: 16, marginBottom: 12, backgroundColor: '#ff6600', paddingVertical: 15, borderRadius: 12, alignItems: 'center' }]} onPress={() => {
-                    navigation.navigate('Workouts', { sportID, sportName });
-                }}>
-                    <Text style={g.buttonText}> Save </Text>
-                </Pressable>
+            <Pressable style={[g.buttonOutline, { marginHorizontal: 16, marginBottom: 10 }]} onPress={() => setIsModelOpen(true)}>
+                <Text style={g.buttonOutlineText}> Add Day </Text>
+            </Pressable>
+            <Pressable style={[g.button, { marginHorizontal: 16, marginBottom: 12, backgroundColor: '#ff6600', paddingVertical: 15, borderRadius: 12, alignItems: 'center' }]}
+                onPress={() => navigation.navigate('Workouts', { sportID, sportName })}
+            >
+                <Text style={g.buttonText}> Save </Text>
+            </Pressable>
+
             <Modal
                 animationType="slide"
                 transparent={true}
                 visible={isModelOpen}
-                onRequestClose={() => setIsModelOpen(false)}>
+                onRequestClose={() => setIsModelOpen(false)}
+            >
                 <View style={g.modalOverlay}>
                     <View style={g.modalContainer}>
                         <Text style={g.modalTitle}>Add Day</Text>

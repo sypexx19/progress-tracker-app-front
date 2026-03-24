@@ -1,18 +1,18 @@
-import { useState, useEffect, useContext } from 'react';
+import { useState, useEffect } from 'react';
 import { View, Text, FlatList, StyleSheet, Pressable, TextInput, ActivityIndicator, Alert } from 'react-native';
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useNavigation } from '@react-navigation/native';
-import { AuthContext } from '../context/AuthContext';
+import { getExercises } from '../controllers/exercises_controllers';
+import { getSessionExercises, createExerciseLog } from '../controllers/session_controllers';
 
 const Progress = (props) => {
     const { dayID } = props.route.params;
-    const { token } = useContext(AuthContext);
     const navigation = useNavigation();
 
     const [exercises, setExercises] = useState([]);
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
-    const [onFocus, setOnFocus] = useState("");
+    const [onFocus, setOnFocus] = useState('');
     const [exerciseData, setExerciseData] = useState({});
 
     useEffect(() => {
@@ -22,43 +22,23 @@ const Progress = (props) => {
     const fetchExercises = async () => {
         setLoading(true);
         try {
-            // 1) Load exercise list exactly like EditEx.jsx
-            const exRes = await fetch(`http://192.168.100.7:5000/api/exercises/get/${dayID}`, {
-                method: "GET",
-                headers: {
-                    "Content-Type": "application/json",
-                    "Authorization": `Bearer ${token}`
-                },
-            });
+            const baseExercises = await getExercises(dayID);
+            const logsList = await getSessionExercises(dayID);
+            const logsMap = new Map(
+                Array.isArray(logsList) ? logsList.map((l) => [String(l.exercise_id), l]) : []
+            );
 
-            const exText = await exRes.text();
-            const exData = exText ? JSON.parse(exText) : [];
-            const baseExercises = Array.isArray(exData) ? exData : [];
-
-            // 2) Load existing logs for history + latest values
-            const logsRes = await fetch(`http://192.168.100.7:5000/api/session/getEx/${dayID}`, {
-                method: "GET",
-                headers: {
-                    "Content-Type": "application/json",
-                    "Authorization": `Bearer ${token}`
-                },
-            });
-            const logsText = await logsRes.text();
-            const logsData = logsText ? JSON.parse(logsText) : [];
-            const logsList = Array.isArray(logsData) ? logsData : [];
-            const logsMap = new Map(logsList.map((l) => [String(l.exercise_id), l]));
-
-            const list = baseExercises.map((ex) => {
+            const list = (Array.isArray(baseExercises) ? baseExercises : []).map((ex) => {
                 const logData = logsMap.get(String(ex.id));
                 return {
                     exercise_id: ex.id,
-                    ex_name: ex.ex_name,
-                    sets: ex.sets,
-                    reps: ex.reps,
-                    weight: ex.weight,
-                    rest: ex.rest,
-                    latest: logData?.latest || null,
-                    logs: logData?.logs || [],
+                    ex_name:     ex.ex_name,
+                    sets:        ex.sets,
+                    reps:        ex.reps,
+                    weight:      ex.weight,
+                    rest:        ex.rest,
+                    latest:      logData?.latest || null,
+                    logs:        logData?.logs   || [],
                 };
             });
 
@@ -67,16 +47,16 @@ const Progress = (props) => {
             const initial = list.reduce((acc, item) => {
                 const key = item.exercise_id;
                 acc[key] = {
-                    sets: item.latest?.sets ? String(item.latest.sets) : (item.sets ? String(item.sets) : ''),
-                    reps: item.latest?.reps ? String(item.latest.reps) : (item.reps ? String(item.reps) : ''),
+                    sets:   item.latest?.sets   ? String(item.latest.sets)   : (item.sets   ? String(item.sets)   : ''),
+                    reps:   item.latest?.reps   ? String(item.latest.reps)   : (item.reps   ? String(item.reps)   : ''),
                     weight: item.latest?.weight ? String(item.latest.weight) : (item.weight ? String(item.weight) : ''),
-                    rest: item.latest?.rest ? String(item.latest.rest) : (item.rest ? String(item.rest) : ''),
+                    rest:   item.latest?.rest   ? String(item.latest.rest)   : (item.rest   ? String(item.rest)   : ''),
                 };
                 return acc;
             }, {});
             setExerciseData(initial);
         } catch (error) {
-            console.error("Error fetching exercises:", error);
+            console.error('Error fetching exercises:', error);
         } finally {
             setLoading(false);
         }
@@ -85,45 +65,35 @@ const Progress = (props) => {
     const handleChange = (id, field, value) => {
         setExerciseData(prev => ({
             ...prev,
-            [id]: { ...prev[id], [field]: value }
+            [id]: { ...prev[id], [field]: value },
         }));
     };
-
 
     const saveOneLog = async (exercise) => {
         const key = exercise.exercise_id;
         const form = exerciseData[key] || {};
-        const sets = parseInt(form.sets, 10);
-        const reps = parseInt(form.reps, 10);
+        const sets   = parseInt(form.sets, 10);
+        const reps   = parseInt(form.reps, 10);
         const weight = parseFloat(form.weight);
-        const rest = parseInt(form.rest, 10);
+        const rest   = parseInt(form.rest, 10);
 
         if (!sets || !reps || Number.isNaN(weight) || !rest) {
             return { ok: false, message: `${exercise.ex_name}: fill Sets, Reps, Weight and Rest` };
         }
 
-        const res = await fetch(`http://192.168.100.7:5000/api/session/logs/${dayID}`, {
-            method: "POST",
-            headers: {
-                "Content-Type": "application/json",
-                "Authorization": `Bearer ${token}`
-            },
-            body: JSON.stringify({
+        try {
+            await createExerciseLog(dayID, {
                 exercise_id: key,
                 ex_name: exercise.ex_name,
                 sets,
                 reps,
                 weight,
                 rest,
-            }),
-        });
-
-        if (!res.ok) {
-            const errText = await res.text();
-            return { ok: false, message: `${exercise.ex_name}: ${errText || 'save failed'}` };
+            });
+            return { ok: true };
+        } catch (error) {
+            return { ok: false, message: `${exercise.ex_name}: ${error.message || 'save failed'}` };
         }
-
-        return { ok: true };
     };
 
     const handleConfirm = async () => {
@@ -135,16 +105,16 @@ const Progress = (props) => {
                 Alert.alert('Save failed', failed.map((f) => f.message).join('\n'));
                 return;
             }
-
             Alert.alert('Saved', 'New log entries were added.');
             await fetchExercises();
         } catch (error) {
-            console.error("Error saving logs:", error);
+            console.error('Error saving logs:', error);
             Alert.alert('Error', 'Unable to save logs right now.');
         } finally {
             setSaving(false);
         }
     };
+
     const renderItem = ({ item }) => {
         const key = item.exercise_id;
         const logs = Array.isArray(item.logs) ? item.logs : [];
@@ -155,19 +125,16 @@ const Progress = (props) => {
                 </View>
                 <View style={styles.inputRow}>
                     {[
-                        { field: 'sets', label: 'Sets' },
-                        { field: 'reps', label: 'Reps' },
-                        { field: 'weight', label: 'Weight' },
-                        { field: 'rest', label: 'Rest (s)' },
+                        { field: 'sets',   label: 'Sets'     },
+                        { field: 'reps',   label: 'Reps'     },
+                        { field: 'weight', label: 'Weight'   },
+                        { field: 'rest',   label: 'Rest (s)' },
                     ].map(({ field, label }) => (
                         <View style={styles.inputGroup} key={field}>
                             <TextInput
-                                style={[
-                                    styles.input,
-                                    onFocus === field + key && styles.inputFocused
-                                ]}
+                                style={[styles.input, onFocus === field + key && styles.inputFocused]}
                                 onFocus={() => setOnFocus(field + key)}
-                                onBlur={() => setOnFocus("")}
+                                onBlur={() => setOnFocus('')}
                                 keyboardType="numeric"
                                 placeholder="0"
                                 placeholderTextColor="#555"
@@ -191,6 +158,7 @@ const Progress = (props) => {
             </View>
         );
     };
+
     if (loading) {
         return (
             <SafeAreaView style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
@@ -201,10 +169,7 @@ const Progress = (props) => {
 
     return (
         <SafeAreaView style={styles.container}>
-            <Text style={styles.title}>
-                Exercise Progress
-            </Text>
-
+            <Text style={styles.title}>Exercise Progress</Text>
             {exercises.length === 0 ? (
                 <View style={styles.empty}>
                     <Text style={styles.emptyText}>No exercises yet. Add one below.</Text>
@@ -219,11 +184,7 @@ const Progress = (props) => {
                     showsVerticalScrollIndicator={false}
                 />
             )}
-
-            <Pressable
-                style={styles.buttonOutline}
-                onPress={() => navigation.navigate('AddEx', { dayID })}
-            >
+            <Pressable style={styles.buttonOutline} onPress={() => navigation.navigate('AddEx', { dayID })}>
                 <Text style={styles.buttonOutlineText}>+ Add Exercise</Text>
             </Pressable>
             <Pressable style={styles.button} onPress={handleConfirm} disabled={saving}>
@@ -236,116 +197,24 @@ const Progress = (props) => {
 export default Progress;
 
 const styles = StyleSheet.create({
-    container: {
-        flex: 1,
-        backgroundColor: '#111',
-    },
-    title: {
-        color: '#ff6600',
-        fontSize: 24,
-        fontWeight: '700',
-        paddingHorizontal: 16,
-        paddingTop: 16,
-        paddingBottom: 4,
-    },
-    listContent: {
-        paddingHorizontal: 16,
-        paddingTop: 12,
-        paddingBottom: 10,
-        gap: 16,
-    },
-    cardLabel: {
-        color: '#fff',
-        fontSize: 18,
-        fontWeight: '700',
-    },
-    inputRow: {
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-    },
-    inputGroup: {
-        alignItems: 'center',
-        gap: 8,
-    },
-    input: {
-        width: 58,
-        height: 46,
-        borderWidth: 1,
-        borderRadius: 10,
-        borderColor: '#555',
-        color: '#fff',
-        textAlign: 'center',
-        fontSize: 16,
-    },
-    inputFocused: {
-        borderColor: '#ff6600',
-    },
-    inputLabel: {
-        color: '#aaa',
-        fontSize: 12,
-    },
-    empty: {
-        flex: 1,
-        justifyContent: 'center',
-        alignItems: 'center',
-    },
-    emptyText: {
-        color: '#555',
-        fontSize: 16,
-    },
-    button: {
-        marginHorizontal: 16,
-        marginBottom: 12,
-        backgroundColor: '#ff6600',
-        paddingVertical: 15,
-        borderRadius: 12,
-        alignItems: 'center',
-    },
-    buttonText: {
-        color: '#fff',
-        fontSize: 18,
-        fontWeight: 'bold',
-    },
-    buttonOutline: {
-        marginHorizontal: 16,
-        marginBottom: 10,
-        borderColor: '#ff6600',
-        borderWidth: 1.5,
-        borderRadius: 12,
-        paddingVertical: 13,
-        alignItems: 'center',
-    },
-    buttonOutlineText: {
-        color: '#ff6600',
-        fontSize: 16,
-        fontWeight: '700',
-    },
-    card: {
-        backgroundColor: '#1a1a1a',
-        borderRadius: 16,
-        padding: 16,
-        gap: 16,
-        borderWidth: 1,
-        borderColor: '#2a2a2a',
-    },
-    cardHeader: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-    },
-    logsWrap: {
-        borderTopWidth: 1,
-        borderTopColor: '#2a2a2a',
-        paddingTop: 10,
-        gap: 4,
-    },
-    logsTitle: {
-        color: '#bbb',
-        fontSize: 12,
-        fontWeight: '600',
-    },
-    logItem: {
-        color: '#888',
-        fontSize: 12,
-    },
+    container:       { flex: 1, backgroundColor: '#111' },
+    title:           { color: '#ff6600', fontSize: 24, fontWeight: '700', paddingHorizontal: 16, paddingTop: 16, paddingBottom: 4 },
+    listContent:     { paddingHorizontal: 16, paddingTop: 12, paddingBottom: 10, gap: 16 },
+    cardLabel:       { color: '#fff', fontSize: 18, fontWeight: '700' },
+    inputRow:        { flexDirection: 'row', justifyContent: 'space-between' },
+    inputGroup:      { alignItems: 'center', gap: 8 },
+    input:           { width: 58, height: 46, borderWidth: 1, borderRadius: 10, borderColor: '#555', color: '#fff', textAlign: 'center', fontSize: 16 },
+    inputFocused:    { borderColor: '#ff6600' },
+    inputLabel:      { color: '#aaa', fontSize: 12 },
+    empty:           { flex: 1, justifyContent: 'center', alignItems: 'center' },
+    emptyText:       { color: '#555', fontSize: 16 },
+    button:          { marginHorizontal: 16, marginBottom: 12, backgroundColor: '#ff6600', paddingVertical: 15, borderRadius: 12, alignItems: 'center' },
+    buttonText:      { color: '#fff', fontSize: 18, fontWeight: 'bold' },
+    buttonOutline:   { marginHorizontal: 16, marginBottom: 10, borderColor: '#ff6600', borderWidth: 1.5, borderRadius: 12, paddingVertical: 13, alignItems: 'center' },
+    buttonOutlineText: { color: '#ff6600', fontSize: 16, fontWeight: '700' },
+    card:            { backgroundColor: '#1a1a1a', borderRadius: 16, padding: 16, gap: 16, borderWidth: 1, borderColor: '#2a2a2a' },
+    cardHeader:      { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+    logsWrap:        { borderTopWidth: 1, borderTopColor: '#2a2a2a', paddingTop: 10, gap: 4 },
+    logsTitle:       { color: '#bbb', fontSize: 12, fontWeight: '600' },
+    logItem:         { color: '#888', fontSize: 12 },
 });

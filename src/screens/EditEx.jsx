@@ -1,17 +1,16 @@
-import { useState, useEffect, useContext } from 'react';
+import { useState, useEffect } from 'react';
 import { View, Text, FlatList, StyleSheet, Pressable, TextInput, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useNavigation } from '@react-navigation/native';
-import { AuthContext } from '../context/AuthContext';
+import { getExercises, deleteEx } from '../controllers/exercises_controllers';
 
 const EditEx = (props) => {
     const { day, dayID, onSave } = props.route.params;
-    const { token } = useContext(AuthContext);
     const navigation = useNavigation();
 
     const [exercises, setExercises] = useState([]);
     const [loading, setLoading] = useState(true);
-    const [onFocus, setOnFocus] = useState("");
+    const [onFocus, setOnFocus] = useState('');
     const [exerciseData, setExerciseData] = useState({});
 
     useEffect(() => {
@@ -20,29 +19,22 @@ const EditEx = (props) => {
 
     const fetchExercises = async () => {
         try {
-            const res = await fetch(`http://192.168.100.7:5000/api/exercises/get/${dayID}`, {
-                method: "GET",
-                headers: {
-                    "Content-Type": "application/json",
-                    "Authorization": `Bearer ${token}`
-                },
-            });
-            const data = await res.json();
+            const data = await getExercises(dayID);
             const list = Array.isArray(data) ? data : [];
             setExercises(list);
             const initial = list.reduce((acc, item) => {
                 const key = item.ex_id ?? item.id;
                 acc[key] = {
-                    sets: item.sets ? String(item.sets) : '',
-                    reps: item.reps ? String(item.reps) : '',
+                    sets:   item.sets   ? String(item.sets)   : '',
+                    reps:   item.reps   ? String(item.reps)   : '',
                     weight: item.weight ? String(item.weight) : '',
-                    rest: item.rest ? String(item.rest) : '',
+                    rest:   item.rest   ? String(item.rest)   : '',
                 };
                 return acc;
             }, {});
             setExerciseData(initial);
         } catch (error) {
-            console.error("Error fetching exercises:", error);
+            console.error('Error fetching exercises:', error);
         } finally {
             setLoading(false);
         }
@@ -51,10 +43,9 @@ const EditEx = (props) => {
     const handleChange = (id, field, value) => {
         setExerciseData(prev => ({
             ...prev,
-            [id]: { ...prev[id], [field]: value }
+            [id]: { ...prev[id], [field]: value },
         }));
     };
-
 
     const handleConfirm = () => {
         const payload = exercises.map(ex => {
@@ -63,29 +54,19 @@ const EditEx = (props) => {
                 exercise_id: key,
                 ex_name: ex.ex_name,
                 dayID,
-                ...(exerciseData[key] || { sets: '', reps: '', weight: '', rest: '' })
+                ...(exerciseData[key] || { sets: '', reps: '', weight: '', rest: '' }),
             };
         });
-
-        if (onSave) {
-            onSave(dayID, payload);
-        }
-
+        if (onSave) onSave(dayID, payload);
         navigation.goBack();
     };
+
     const handleDelete = async (id) => {
         try {
-            const res = await fetch(`http://192.168.100.7:5000/api/exercises/delete/${id}`, {
-                method: "DELETE",
-                headers: {
-                    "Content-Type": "application/json",
-                    "Authorization": `Bearer ${token}`
-                },
-            });
-            const data = await res.json();
+            await deleteEx(id);
             setExercises(exercises.filter(ex => ex.id !== id));
         } catch (error) {
-            console.error("Error deleting exercise:", error);
+            console.error('Error deleting exercise:', error);
         }
     };
 
@@ -104,19 +85,16 @@ const EditEx = (props) => {
                 </View>
                 <View style={styles.inputRow}>
                     {[
-                        { field: 'sets', label: 'Sets' },
-                        { field: 'reps', label: 'Reps' },
-                        { field: 'weight', label: 'Weight' },
-                        { field: 'rest', label: 'Rest (s)' },
+                        { field: 'sets',   label: 'Sets'     },
+                        { field: 'reps',   label: 'Reps'     },
+                        { field: 'weight', label: 'Weight'   },
+                        { field: 'rest',   label: 'Rest (s)' },
                     ].map(({ field, label }) => (
                         <View style={styles.inputGroup} key={field}>
                             <TextInput
-                                style={[
-                                    styles.input,
-                                    onFocus === field + key && styles.inputFocused
-                                ]}
+                                style={[styles.input, onFocus === field + key && styles.inputFocused]}
                                 onFocus={() => setOnFocus(field + key)}
-                                onBlur={() => setOnFocus("")}
+                                onBlur={() => setOnFocus('')}
                                 keyboardType="numeric"
                                 placeholder="0"
                                 placeholderTextColor="#555"
@@ -130,6 +108,7 @@ const EditEx = (props) => {
             </View>
         );
     };
+
     if (loading) {
         return (
             <SafeAreaView style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
@@ -143,7 +122,6 @@ const EditEx = (props) => {
             <Text style={styles.title}>
                 {day ? day.charAt(0).toUpperCase() + day.slice(1) : 'Exercises'}
             </Text>
-
             {exercises.length === 0 ? (
                 <View style={styles.empty}>
                     <Text style={styles.emptyText}>No exercises yet. Add one below.</Text>
@@ -158,11 +136,7 @@ const EditEx = (props) => {
                     showsVerticalScrollIndicator={false}
                 />
             )}
-
-            <Pressable
-                style={styles.buttonOutline}
-                onPress={() => navigation.navigate('AddEx', { dayID })}
-            >
+            <Pressable style={styles.buttonOutline} onPress={() => navigation.navigate('AddEx', { dayID })}>
                 <Text style={styles.buttonOutlineText}>+ Add Exercise</Text>
             </Pressable>
             <Pressable style={styles.button} onPress={handleConfirm}>
@@ -175,120 +149,24 @@ const EditEx = (props) => {
 export default EditEx;
 
 const styles = StyleSheet.create({
-    container: {
-        flex: 1,
-        backgroundColor: '#111',
-    },
-    title: {
-        color: '#ff6600',
-        fontSize: 24,
-        fontWeight: '700',
-        paddingHorizontal: 16,
-        paddingTop: 16,
-        paddingBottom: 4,
-    },
-    listContent: {
-        paddingHorizontal: 16,
-        paddingTop: 12,
-        paddingBottom: 10,
-        gap: 16,
-    },
-    cardLabel: {
-        color: '#fff',
-        fontSize: 18,
-        fontWeight: '700',
-    },
-    inputRow: {
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-    },
-    inputGroup: {
-        alignItems: 'center',
-        gap: 8,
-    },
-    input: {
-        width: 58,
-        height: 46,
-        borderWidth: 1,
-        borderRadius: 10,
-        borderColor: '#555',
-        color: '#fff',
-        textAlign: 'center',
-        fontSize: 16,
-    },
-    inputFocused: {
-        borderColor: '#ff6600',
-    },
-    inputLabel: {
-        color: '#aaa',
-        fontSize: 12,
-    },
-    empty: {
-        flex: 1,
-        justifyContent: 'center',
-        alignItems: 'center',
-    },
-    emptyText: {
-        color: '#555',
-        fontSize: 16,
-    },
-    button: {
-        marginHorizontal: 16,
-        marginBottom: 12,
-        backgroundColor: '#ff6600',
-        paddingVertical: 15,
-        borderRadius: 12,
-        alignItems: 'center',
-    },
-    buttonText: {
-        color: '#fff',
-        fontSize: 18,
-        fontWeight: 'bold',
-    },
-    buttonOutline: {
-        marginHorizontal: 16,
-        marginBottom: 10,
-        borderColor: '#ff6600',
-        borderWidth: 1.5,
-        borderRadius: 12,
-        paddingVertical: 13,
-        alignItems: 'center',
-    },
-    buttonOutlineText: {
-        color: '#ff6600',
-        fontSize: 16,
-        fontWeight: '700',
-    },
-    card: {
-        backgroundColor: '#1a1a1a',
-        borderRadius: 16,
-        padding: 16,
-        gap: 16,
-        borderWidth: 1,
-        borderColor: '#2a2a2a',
-    },
-    cardHeader: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-    },
-    deleteBtn: {
-        width: 32,
-        height: 32,
-        borderRadius: 10,
-        backgroundColor: '#2a0a0a',
-        borderWidth: 1,
-        borderColor: '#ff2222',
-        alignItems: 'center',
-        justifyContent: 'center',
-    },
-    deleteBtnPressed: {
-        backgroundColor: '#ff2222',
-        transform: [{ scale: 0.92 }],
-    },
-    deleteIcon: {
-        color: '#ff4444',
-        fontSize: 13,
-        fontWeight: '700',
-    },
+    container:       { flex: 1, backgroundColor: '#111' },
+    title:           { color: '#ff6600', fontSize: 24, fontWeight: '700', paddingHorizontal: 16, paddingTop: 16, paddingBottom: 4 },
+    listContent:     { paddingHorizontal: 16, paddingTop: 12, paddingBottom: 10, gap: 16 },
+    cardLabel:       { color: '#fff', fontSize: 18, fontWeight: '700' },
+    inputRow:        { flexDirection: 'row', justifyContent: 'space-between' },
+    inputGroup:      { alignItems: 'center', gap: 8 },
+    input:           { width: 58, height: 46, borderWidth: 1, borderRadius: 10, borderColor: '#555', color: '#fff', textAlign: 'center', fontSize: 16 },
+    inputFocused:    { borderColor: '#ff6600' },
+    inputLabel:      { color: '#aaa', fontSize: 12 },
+    empty:           { flex: 1, justifyContent: 'center', alignItems: 'center' },
+    emptyText:       { color: '#555', fontSize: 16 },
+    button:          { marginHorizontal: 16, marginBottom: 12, backgroundColor: '#ff6600', paddingVertical: 15, borderRadius: 12, alignItems: 'center' },
+    buttonText:      { color: '#fff', fontSize: 18, fontWeight: 'bold' },
+    buttonOutline:   { marginHorizontal: 16, marginBottom: 10, borderColor: '#ff6600', borderWidth: 1.5, borderRadius: 12, paddingVertical: 13, alignItems: 'center' },
+    buttonOutlineText: { color: '#ff6600', fontSize: 16, fontWeight: '700' },
+    card:            { backgroundColor: '#1a1a1a', borderRadius: 16, padding: 16, gap: 16, borderWidth: 1, borderColor: '#2a2a2a' },
+    cardHeader:      { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+    deleteBtn:       { width: 32, height: 32, borderRadius: 10, backgroundColor: '#2a0a0a', borderWidth: 1, borderColor: '#ff2222', alignItems: 'center', justifyContent: 'center' },
+    deleteBtnPressed:{ backgroundColor: '#ff2222', transform: [{ scale: 0.92 }] },
+    deleteIcon:      { color: '#ff4444', fontSize: 13, fontWeight: '700' },
 });

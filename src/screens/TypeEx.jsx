@@ -1,11 +1,11 @@
-import { useContext, useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { View, Text, FlatList, StyleSheet, Pressable } from 'react-native';
 import { SafeAreaView } from "react-native-safe-area-context";
-import { AuthContext } from '../context/AuthContext';
 import { useNavigation } from '@react-navigation/native';
+import { getTypes } from '../controllers/exercises_controllers';
 import g from '../styles/globalStyles';
 
-const TypeItem = ({ item, workoutID, dayID, onAddExercise }) => {
+const TypeItem = ({ item, workoutID, dayID }) => {
     const navigation = useNavigation();
     return (
         <Pressable
@@ -15,16 +15,13 @@ const TypeItem = ({ item, workoutID, dayID, onAddExercise }) => {
                     workoutID,
                     dayID,
                     typeID: item.id,
-                    // ✅ Pass the callback further down to SelectEx
-                    onAddExercise,
+                    typeName: item.t_name,
                 })
             }
         >
             <View style={styles.cardContent}>
                 <Text style={styles.cardLabel}>
-                    {item.t_name
-                        ? item.t_name.charAt(0).toUpperCase() + item.t_name.slice(1)
-                        : ''}
+                    {item.t_name ? item.t_name.charAt(0).toUpperCase() + item.t_name.slice(1) : ''}
                 </Text>
             </View>
         </Pressable>
@@ -32,8 +29,7 @@ const TypeItem = ({ item, workoutID, dayID, onAddExercise }) => {
 };
 
 const TypeEx = (props) => {
-    const { workoutID, dayID, onAddExercise } = props.route.params;
-    const { token } = useContext(AuthContext);
+    const { workoutID, dayID } = props.route.params;
     const [types, setTypes] = useState([]);
 
     useEffect(() => {
@@ -42,18 +38,10 @@ const TypeEx = (props) => {
 
     const fetchTypes = async () => {
         try {
-            const res = await fetch(`http://192.168.100.7:5000/api/exercises/type`, {
-                method: "GET",
-                headers: {
-                    "Content-Type": "application/json",
-                    "Authorization": `Bearer ${token}`
-                },
-            });
-            const text = await res.text();
-            const data = JSON.parse(text);
+            const data = await getTypes();
             setTypes(Array.isArray(data) ? data : []);
         } catch (error) {
-            console.error("Error fetching types:", error);
+            console.error('Error fetching types:', error);
         }
     };
 
@@ -65,12 +53,7 @@ const TypeEx = (props) => {
                 numColumns={2}
                 columnWrapperStyle={styles.row}
                 renderItem={({ item }) => (
-                    <TypeItem
-                        item={item}
-                        workoutID={workoutID}
-                        dayID={dayID}
-                        onAddExercise={onAddExercise}
-                    />
+                    <TypeItem item={item} workoutID={workoutID} dayID={dayID} />
                 )}
                 contentContainerStyle={styles.listContent}
                 showsVerticalScrollIndicator={false}
@@ -82,40 +65,9 @@ const TypeEx = (props) => {
 export default TypeEx;
 
 const styles = StyleSheet.create({
-    listContent: {
-        paddingHorizontal: 16,
-        paddingTop: 20,
-        paddingBottom: 10,
-        gap: 16,
-    },
-    row: {
-        gap: 16,
-        marginBottom: 16,
-    },
-    card: {
-        flex: 1,
-        height: 120,
-        borderRadius: 20,
-        backgroundColor: '#1a1a1a',
-        borderWidth: 1,
-        borderColor: '#2a2a2a',
-        justifyContent: 'center',
-        alignItems: 'center',
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.3,
-        shadowRadius: 8,
-        elevation: 6,
-    },
-    cardContent: {
-        alignItems: 'center',
-        justifyContent: 'center',
-    },
-    cardLabel: {
-        color: '#fff',
-        fontSize: 18,
-        fontWeight: '700',
-        letterSpacing: 0.5,
-        textAlign: 'center',
-    },
+    listContent: { paddingHorizontal: 16, paddingTop: 20, paddingBottom: 10, gap: 16 },
+    row:         { gap: 16, marginBottom: 16 },
+    card:        { flex: 1, height: 120, borderRadius: 20, backgroundColor: '#1a1a1a', borderWidth: 1, borderColor: '#2a2a2a', justifyContent: 'center', alignItems: 'center', shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 8, elevation: 6 },
+    cardContent: { alignItems: 'center', justifyContent: 'center' },
+    cardLabel:   { color: '#fff', fontSize: 18, fontWeight: '700', letterSpacing: 0.5, textAlign: 'center' },
 });
